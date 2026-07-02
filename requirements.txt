@@ -1,0 +1,12 @@
+# Runtime
+fastapi
+uvicorn
+python-multipart
+puremagic
+pypdf
+python-docx
+openpyxl
+
+# Tests (httpx is required by fastapi.testclient)
+pytest
+httpx

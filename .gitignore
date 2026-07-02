@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Golden fixture binaries are generated locally by scripts/make_fixtures.py.
+# Only the hand-written ExifTool JSON stubs under fixtures/stubs are committed.
+fixtures/*
+!fixtures/stubs/
