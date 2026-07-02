@@ -325,7 +325,12 @@ def find_gps_decimal(merged: dict) -> tuple[float, float] | None:
     with -c "%+.6f" so coordinate values arrive as signed decimal strings.
     """
     lat = lon = None
-    for key, value in merged.items():
+    # The Composite group is processed last so it wins: raw GPS:GPSLatitude is
+    # unsigned with the hemisphere in a separate Ref tag, while Composite
+    # values are already signed.
+    keys = sorted(merged, key=lambda k: k.startswith("Composite:"))
+    for key in keys:
+        value = merged[key]
         tag = _tag_of(key)
         if tag not in ("gpslatitude", "gpslongitude"):
             continue
@@ -334,8 +339,8 @@ def find_gps_decimal(merged: dict) -> tuple[float, float] | None:
             continue
         number = float(m.group(0))
         text = str(value)
-        # Belt and braces: honor a trailing hemisphere letter if a non-signed
-        # format slipped through (custom exiftool config, stub fixtures).
+        # Honor a hemisphere letter when a non-signed format slips through
+        # (raw GPS group values, stub fixtures).
         if ("S" in text and tag == "gpslatitude") or ("W" in text and tag == "gpslongitude"):
             number = -abs(number)
         if tag == "gpslatitude":
