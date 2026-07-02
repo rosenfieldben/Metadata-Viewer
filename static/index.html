@@ -2,66 +2,133 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>metadata-inspector</title>
+<title>Metadata Inspector</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:,">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%8D%3C/text%3E%3C/svg%3E">
 <style>
-  /* Dense utilitarian look: small type, tight spacing, no animation beyond
-     the per-file spinner. */
+  :root {
+    --bg: #0f1117;
+    --panel: #171a22;
+    --panel-2: #1d212b;
+    --border: #2a2f3d;
+    --text: #d7dae2;
+    --muted: #8b91a0;
+    --accent: #7c8cf8;
+    --accent-2: #5ee0c2;
+    --warn-bg: #35201f;
+    --warn-border: #e0655f;
+    --warn-text: #f4b8b4;
+    --info-bg: #1c2b3d;
+    --info-border: #5c9ded;
+    --info-text: #b9d4f2;
+    --good: #7fd58a;
+  }
   * { box-sizing: border-box; margin: 0; }
   body {
-    font: 13px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    background: #16181d; color: #d4d7dd; min-height: 100vh; padding: 14px 18px 60px;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background:
+      radial-gradient(1200px 500px at 80% -10%, rgba(124, 140, 248, 0.12), transparent 60%),
+      radial-gradient(900px 400px at 10% 110%, rgba(94, 224, 194, 0.07), transparent 60%),
+      var(--bg);
+    color: var(--text); min-height: 100vh; padding: 20px clamp(14px, 4vw, 48px) 80px;
   }
-  body.dragover { outline: 3px dashed #6ea8fe; outline-offset: -6px; }
-  header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
-  header h1 { font-size: 16px; color: #fff; }
-  header .hint { color: #8a8f9b; }
+  body.dragover { outline: 3px dashed var(--accent); outline-offset: -8px; }
+  code, .mono, td, .hash, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
+  .logo {
+    width: 34px; height: 34px; border-radius: 9px; flex: none;
+    display: grid; place-items: center; font-size: 17px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  }
+  header h1 {
+    font-size: 19px; font-weight: 700; letter-spacing: 0.2px;
+    background: linear-gradient(90deg, #fff, #aab4ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  header .tagline { color: var(--muted); font-size: 13px; }
+  .privacy {
+    margin-left: auto; font-size: 12px; color: var(--accent-2);
+    border: 1px solid rgba(94, 224, 194, 0.35); border-radius: 999px; padding: 3px 12px;
+    background: rgba(94, 224, 194, 0.07); white-space: nowrap;
+  }
+
+  /* Hero drop zone, shown until the first file arrives */
+  #hero {
+    border: 2px dashed var(--border); border-radius: 16px; background: var(--panel);
+    padding: 56px 24px; text-align: center; cursor: pointer; margin: 6vh auto 0;
+    max-width: 720px; transition: border-color 0.15s, background 0.15s;
+  }
+  #hero:hover, body.dragover #hero { border-color: var(--accent); background: var(--panel-2); }
+  #hero svg { width: 56px; height: 56px; margin-bottom: 14px; stroke: var(--accent); }
+  #hero .big { font-size: 20px; font-weight: 650; color: #fff; margin-bottom: 6px; }
+  #hero .sub { color: var(--muted); margin-bottom: 20px; }
+  #hero .formats { color: var(--muted); font-size: 12px; margin-top: 22px; }
+
   button, .btn {
-    font: inherit; background: #262a33; color: #d4d7dd; border: 1px solid #3a4050;
-    padding: 2px 9px; cursor: pointer; border-radius: 3px;
+    font: inherit; font-size: 13px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); padding: 5px 14px; cursor: pointer; border-radius: 7px;
   }
-  button:hover { background: #313644; }
+  button:hover { border-color: var(--accent); color: #fff; }
+  button.primary {
+    background: linear-gradient(135deg, var(--accent), #6a79e8); border: none;
+    color: #fff; font-weight: 600; padding: 8px 22px;
+  }
+  button.primary:hover { filter: brightness(1.1); }
   input[type="search"] {
-    font: inherit; background: #1d2027; color: #d4d7dd; border: 1px solid #3a4050;
-    padding: 2px 8px; border-radius: 3px; width: 260px;
+    font: inherit; font-size: 13px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); padding: 5px 12px; border-radius: 7px; width: 280px;
   }
-  .card { border: 1px solid #333947; border-radius: 4px; margin-bottom: 14px; background: #1b1e25; }
+  input[type="search"]:focus { outline: none; border-color: var(--accent); }
+
+  .card {
+    border: 1px solid var(--border); border-radius: 12px; margin-bottom: 18px;
+    background: var(--panel); overflow: hidden; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  }
   .card > .head {
-    display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline;
-    padding: 8px 12px; border-bottom: 1px solid #2a2f3a; background: #20242d;
+    display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel-2);
   }
-  .head .fname { font-weight: bold; color: #fff; word-break: break-all; }
-  .head .meta { color: #9aa0ad; }
-  .hash { color: #7fb3f0; cursor: pointer; word-break: break-all; }
+  .head .fname { font-weight: 650; font-size: 15px; color: #fff; word-break: break-all; }
+  .badge {
+    font-size: 11.5px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px;
+  }
+  .hash { font-size: 12px; color: #8fb7ef; cursor: pointer; word-break: break-all; }
   .hash:hover { text-decoration: underline; }
-  .copied { color: #7fd58a; }
-  .body { padding: 8px 12px; }
-  .flags { margin: 4px 0 10px; }
-  .flag { padding: 4px 8px; margin: 3px 0; border-left: 4px solid; border-radius: 2px; }
-  .flag.warning { background: #3a2323; border-color: #e0655f; color: #f2b8b5; }
-  .flag.info { background: #21303f; border-color: #5c9ded; color: #b7d3f3; }
-  .flag .fields { color: #8a8f9b; display: block; }
-  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px; }
-  details.group { border: 1px solid #2a2f3a; border-radius: 3px; margin: 5px 0; }
+  .copied { color: var(--good); }
+  .body { padding: 12px 16px 16px; }
+
+  .flags { margin: 2px 0 12px; display: grid; gap: 6px; }
+  .flag { padding: 8px 12px; border-left: 4px solid; border-radius: 6px; font-size: 13px; }
+  .flag.warning { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); }
+  .flag.info { background: var(--info-bg); border-color: var(--info-border); color: var(--info-text); }
+  .flag .fields { color: var(--muted); display: block; font-size: 12px; margin-top: 2px; }
+  .gpslink { color: var(--good); }
+  .errors { color: #e0a95f; margin: 6px 0; font-size: 13px; }
+
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
+  details.group { border: 1px solid var(--border); border-radius: 8px; margin: 7px 0; overflow: hidden; }
   details.group > summary {
-    cursor: pointer; padding: 3px 9px; background: #232733; color: #c8ccd6;
-    font-weight: bold; user-select: none;
+    cursor: pointer; padding: 6px 12px; background: var(--panel-2); color: #cfd4e0;
+    font-weight: 600; font-size: 13px; user-select: none; list-style: none;
   }
-  details.group > summary .count { color: #7d8393; font-weight: normal; }
-  table { width: 100%; border-collapse: collapse; }
-  td { padding: 2px 9px; border-top: 1px solid #23272f; vertical-align: top; }
+  details.group > summary::before { content: "\25BE\2009"; color: var(--accent); }
+  details.group:not([open]) > summary::before { content: "\25B8\2009"; }
+  details.group > summary .count { color: var(--muted); font-weight: 400; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  td { padding: 4px 12px; border-top: 1px solid #21252f; vertical-align: top; }
+  tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }
   td.k { width: 30%; color: #9fc6f5; white-space: nowrap; }
   td.v { word-break: break-word; white-space: pre-wrap; }
-  .gpslink { color: #7fd58a; }
-  .errors { color: #e0a95f; margin: 6px 0; }
+
   pre.raw {
-    background: #14161b; border: 1px solid #2a2f3a; padding: 8px;
-    overflow-x: auto; margin: 6px 0; max-height: 500px; overflow-y: auto;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+    overflow: auto; margin: 6px 0; max-height: 500px; font-size: 12px;
   }
   .spinner {
-    display: inline-block; width: 14px; height: 14px; border: 2px solid #3a4050;
-    border-top-color: #7fb3f0; border-radius: 50%; animation: spin 0.8s linear infinite;
+    display: inline-block; width: 15px; height: 15px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite;
     vertical-align: -2px; margin-right: 8px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -70,11 +137,23 @@
 </head>
 <body>
 <header>
-  <h1>metadata-inspector</h1>
-  <span class="hint">drop files anywhere, or</span>
-  <button id="browse">browse...</button>
-  <span class="hint">local only: files are inspected in a temp dir and deleted immediately</span>
+  <div class="logo">&#128269;</div>
+  <h1>Metadata Inspector</h1>
+  <span class="tagline">see everything a file says about itself</span>
+  <span class="privacy">100% local &#183; files never leave this machine</span>
 </header>
+
+<div id="hero">
+  <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3v12m0-12l-4 4m4-4l4 4"/>
+    <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
+  </svg>
+  <div class="big">Drop files here</div>
+  <div class="sub">or click anywhere in this box to browse</div>
+  <button class="primary" type="button">Choose files</button>
+  <div class="formats">images &#183; PDF &#183; Office documents &#183; video &#183; audio &#183; archives &#183; anything else</div>
+</div>
+
 <input type="file" id="picker" multiple class="hidden">
 <div id="results"></div>
 
@@ -82,8 +161,9 @@
 "use strict";
 
 const resultsEl = document.getElementById("results");
+const heroEl = document.getElementById("hero");
 const picker = document.getElementById("picker");
-document.getElementById("browse").onclick = () => picker.click();
+heroEl.onclick = () => picker.click();
 picker.onchange = () => { enqueue([...picker.files]); picker.value = ""; };
 
 // Full-window drop target. dragenter/leave fire on children constantly, so a
@@ -109,6 +189,7 @@ document.addEventListener("drop", e => {
 const queue = [];
 let busy = false;
 function enqueue(files) {
+  if (files.length) heroEl.classList.add("hidden");
   for (const f of files) queue.push(f);
   pump();
 }
@@ -148,7 +229,7 @@ function makePendingCard(file) {
   const head = el("div", "head");
   head.appendChild(el("span", "spinner"));
   head.appendChild(el("span", "fname", file.name));
-  head.appendChild(el("span", "meta", "inspecting..."));
+  head.appendChild(el("span", "badge", "inspecting..."));
   card.appendChild(head);
   // Newest first so the file just dropped is visible without scrolling.
   resultsEl.prepend(card);
@@ -161,8 +242,7 @@ function renderError(card, file, message) {
   head.appendChild(el("span", "fname", file.name));
   card.appendChild(head);
   const body = el("div", "body");
-  const flag = el("div", "flag warning", message);
-  body.appendChild(flag);
+  body.appendChild(el("div", "flag warning", message));
   card.appendChild(body);
 }
 
@@ -198,8 +278,8 @@ function renderResult(card, data) {
 
   const head = el("div", "head");
   head.appendChild(el("span", "fname", info.name));
-  head.appendChild(el("span", "meta",
-    `${info.detected_type || "unknown type"} | ${humanSize(info.size)} (${info.size} B)`));
+  head.appendChild(el("span", "badge", info.detected_type || "unknown type"));
+  head.appendChild(el("span", "badge", `${humanSize(info.size)} (${info.size} B)`));
   head.appendChild(copyable("md5", info.md5));
   head.appendChild(copyable("sha256", info.sha256));
   card.appendChild(head);
@@ -265,7 +345,7 @@ function renderResult(card, data) {
     for (const entry of group.entries) {
       const tr = document.createElement("tr");
       const value = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value);
-      tr.appendChild(Object.assign(el("td", "k", entry.key)));
+      tr.appendChild(el("td", "k", entry.key));
       tr.appendChild(el("td", "v", value));
       tr.dataset.search = (group.name + " " + entry.key + " " + value).toLowerCase();
       table.appendChild(tr);
