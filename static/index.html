@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>metadata-inspector</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* Dense utilitarian look: small type, tight spacing, no animation beyond
+     the per-file spinner. */
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font: 13px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: #16181d; color: #d4d7dd; min-height: 100vh; padding: 14px 18px 60px;
+  }
+  body.dragover { outline: 3px dashed #6ea8fe; outline-offset: -6px; }
+  header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 16px; color: #fff; }
+  header .hint { color: #8a8f9b; }
+  button, .btn {
+    font: inherit; background: #262a33; color: #d4d7dd; border: 1px solid #3a4050;
+    padding: 2px 9px; cursor: pointer; border-radius: 3px;
+  }
+  button:hover { background: #313644; }
+  input[type="search"] {
+    font: inherit; background: #1d2027; color: #d4d7dd; border: 1px solid #3a4050;
+    padding: 2px 8px; border-radius: 3px; width: 260px;
+  }
+  .card { border: 1px solid #333947; border-radius: 4px; margin-bottom: 14px; background: #1b1e25; }
+  .card > .head {
+    display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline;
+    padding: 8px 12px; border-bottom: 1px solid #2a2f3a; background: #20242d;
+  }
+  .head .fname { font-weight: bold; color: #fff; word-break: break-all; }
+  .head .meta { color: #9aa0ad; }
+  .hash { color: #7fb3f0; cursor: pointer; word-break: break-all; }
+  .hash:hover { text-decoration: underline; }
+  .copied { color: #7fd58a; }
+  .body { padding: 8px 12px; }
+  .flags { margin: 4px 0 10px; }
+  .flag { padding: 4px 8px; margin: 3px 0; border-left: 4px solid; border-radius: 2px; }
+  .flag.warning { background: #3a2323; border-color: #e0655f; color: #f2b8b5; }
+  .flag.info { background: #21303f; border-color: #5c9ded; color: #b7d3f3; }
+  .flag .fields { color: #8a8f9b; display: block; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px; }
+  details.group { border: 1px solid #2a2f3a; border-radius: 3px; margin: 5px 0; }
+  details.group > summary {
+    cursor: pointer; padding: 3px 9px; background: #232733; color: #c8ccd6;
+    font-weight: bold; user-select: none;
+  }
+  details.group > summary .count { color: #7d8393; font-weight: normal; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 2px 9px; border-top: 1px solid #23272f; vertical-align: top; }
+  td.k { width: 30%; color: #9fc6f5; white-space: nowrap; }
+  td.v { word-break: break-word; white-space: pre-wrap; }
+  .gpslink { color: #7fd58a; }
+  .errors { color: #e0a95f; margin: 6px 0; }
+  pre.raw {
+    background: #14161b; border: 1px solid #2a2f3a; padding: 8px;
+    overflow-x: auto; margin: 6px 0; max-height: 500px; overflow-y: auto;
+  }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px; border: 2px solid #3a4050;
+    border-top-color: #7fb3f0; border-radius: 50%; animation: spin 0.8s linear infinite;
+    vertical-align: -2px; margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>metadata-inspector</h1>
+  <span class="hint">drop files anywhere, or</span>
+  <button id="browse">browse...</button>
+  <span class="hint">local only: files are inspected in a temp dir and deleted immediately</span>
+</header>
+<input type="file" id="picker" multiple class="hidden">
+<div id="results"></div>
+
+<script>
+"use strict";
+
+const resultsEl = document.getElementById("results");
+const picker = document.getElementById("picker");
+document.getElementById("browse").onclick = () => picker.click();
+picker.onchange = () => { enqueue([...picker.files]); picker.value = ""; };
+
+// Full-window drop target. dragenter/leave fire on children constantly, so a
+// counter is the reliable way to keep the highlight stable.
+let dragDepth = 0;
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("dragenter", e => {
+  e.preventDefault();
+  if (++dragDepth === 1) document.body.classList.add("dragover");
+});
+document.addEventListener("dragleave", () => {
+  if (--dragDepth === 0) document.body.classList.remove("dragover");
+});
+document.addEventListener("drop", e => {
+  e.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove("dragover");
+  enqueue([...e.dataTransfer.files]);
+});
+
+// Sequential processing per spec: one in-flight request keeps big files from
+// competing for disk and CPU.
+const queue = [];
+let busy = false;
+function enqueue(files) {
+  for (const f of files) queue.push(f);
+  pump();
+}
+async function pump() {
+  if (busy) return;
+  busy = true;
+  while (queue.length) {
+    const file = queue.shift();
+    const card = makePendingCard(file);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const resp = await fetch("/api/inspect", { method: "POST", body: form });
+      if (!resp.ok) {
+        let detail = resp.statusText;
+        try { detail = (await resp.json()).detail || detail; } catch {}
+        renderError(card, file, `${resp.status}: ${detail}`);
+        continue;
+      }
+      renderResult(card, await resp.json());
+    } catch (err) {
+      renderError(card, file, String(err));
+    }
+  }
+  busy = false;
+}
+
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function makePendingCard(file) {
+  const card = el("div", "card");
+  const head = el("div", "head");
+  head.appendChild(el("span", "spinner"));
+  head.appendChild(el("span", "fname", file.name));
+  head.appendChild(el("span", "meta", "inspecting..."));
+  card.appendChild(head);
+  // Newest first so the file just dropped is visible without scrolling.
+  resultsEl.prepend(card);
+  return card;
+}
+
+function renderError(card, file, message) {
+  card.textContent = "";
+  const head = el("div", "head");
+  head.appendChild(el("span", "fname", file.name));
+  card.appendChild(head);
+  const body = el("div", "body");
+  const flag = el("div", "flag warning", message);
+  body.appendChild(flag);
+  card.appendChild(body);
+}
+
+function humanSize(n) {
+  if (n < 1024) return n + " B";
+  const units = ["KB", "MB", "GB", "TB"];
+  let i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < units.length - 1);
+  return n.toFixed(n >= 100 ? 0 : 1) + " " + units[i];
+}
+
+function copyable(label, value) {
+  const span = el("span", "hash", `${label}:${value}`);
+  span.title = "click to copy";
+  span.onclick = async () => {
+    try { await navigator.clipboard.writeText(value); }
+    catch {
+      // Clipboard API needs a secure context; execCommand still works on
+      // plain http://localhost in some browsers, so try it as a fallback.
+      const ta = document.createElement("textarea");
+      ta.value = value; document.body.appendChild(ta);
+      ta.select(); document.execCommand("copy"); ta.remove();
+    }
+    span.classList.add("copied");
+    setTimeout(() => span.classList.remove("copied"), 800);
+  };
+  return span;
+}
+
+function renderResult(card, data) {
+  card.textContent = "";
+  const info = data.file_info;
+
+  const head = el("div", "head");
+  head.appendChild(el("span", "fname", info.name));
+  head.appendChild(el("span", "meta",
+    `${info.detected_type || "unknown type"} | ${humanSize(info.size)} (${info.size} B)`));
+  head.appendChild(copyable("md5", info.md5));
+  head.appendChild(copyable("sha256", info.sha256));
+  card.appendChild(head);
+
+  const body = el("div", "body");
+  card.appendChild(body);
+
+  // Flags first, warnings already sorted ahead of info by the backend.
+  if (data.flags.length || data.gps) {
+    const flagsEl = el("div", "flags");
+    for (const flag of data.flags) {
+      const f = el("div", `flag ${flag.severity}`);
+      f.appendChild(el("span", null, `${flag.severity.toUpperCase()}: ${flag.label}`));
+      if (flag.fields.length) f.appendChild(el("span", "fields", flag.fields.join(", ")));
+      if (data.gps && flag.label.startsWith("GPS")) {
+        const [lat, lon] = data.gps;
+        const a = el("a", "gpslink", `${lat.toFixed(6)}, ${lon.toFixed(6)} (OpenStreetMap)`);
+        a.href = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}`;
+        a.target = "_blank";
+        a.rel = "noopener";
+        f.appendChild(document.createElement("br"));
+        f.appendChild(a);
+      }
+      flagsEl.appendChild(f);
+    }
+    body.appendChild(flagsEl);
+  }
+
+  if (data.errors.length) {
+    const errs = el("div", "errors");
+    errs.textContent = "extraction errors: " + data.errors.join(" | ");
+    body.appendChild(errs);
+  }
+
+  const toolbar = el("div", "toolbar");
+  const search = document.createElement("input");
+  search.type = "search";
+  search.placeholder = "filter keys and values...";
+  toolbar.appendChild(search);
+  const btnJson = el("button", null, "Export JSON");
+  const btnCsv = el("button", null, "Export CSV");
+  const btnRaw = el("button", null, "Raw");
+  toolbar.appendChild(btnJson);
+  toolbar.appendChild(btnCsv);
+  toolbar.appendChild(btnRaw);
+  body.appendChild(toolbar);
+
+  const rawPre = el("pre", "raw hidden");
+  rawPre.textContent = JSON.stringify(data.raw, null, 2);
+  body.appendChild(rawPre);
+  btnRaw.onclick = () => rawPre.classList.toggle("hidden");
+
+  const groupsEl = el("div");
+  body.appendChild(groupsEl);
+  for (const group of data.groups) {
+    const details = el("details", "group");
+    details.open = true;
+    const summary = el("summary");
+    summary.appendChild(el("span", null, group.name + " "));
+    summary.appendChild(el("span", "count", `(${group.entries.length})`));
+    details.appendChild(summary);
+    const table = document.createElement("table");
+    for (const entry of group.entries) {
+      const tr = document.createElement("tr");
+      const value = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value);
+      tr.appendChild(Object.assign(el("td", "k", entry.key)));
+      tr.appendChild(el("td", "v", value));
+      tr.dataset.search = (group.name + " " + entry.key + " " + value).toLowerCase();
+      table.appendChild(tr);
+    }
+    details.appendChild(table);
+    groupsEl.appendChild(details);
+  }
+
+  search.oninput = () => {
+    const needle = search.value.toLowerCase();
+    for (const details of groupsEl.children) {
+      let visible = 0;
+      for (const tr of details.querySelectorAll("tr")) {
+        const hit = !needle || tr.dataset.search.includes(needle);
+        tr.classList.toggle("hidden", !hit);
+        if (hit) visible++;
+      }
+      details.classList.toggle("hidden", visible === 0);
+    }
+  };
+
+  const baseName = info.name.replace(/\.[^.]*$/, "") || "metadata";
+  btnJson.onclick = () =>
+    download(`${baseName}.metadata.json`, JSON.stringify(data, null, 2), "application/json");
+  btnCsv.onclick = () =>
+    download(`${baseName}.metadata.csv`, toCsv(data.groups), "text/csv");
+}
+
+// Mirrors logic.flatten_csv_rows / rows_to_csv on the backend: group,key,value
+// rows with non-strings JSON-encoded. Kept client side so exporting needs no
+// second request.
+function toCsv(groups) {
+  const esc = s => /[",\n\r]/.test(s) ? '"' + s.replaceAll('"', '""') + '"' : s;
+  const lines = ["group,key,value"];
+  for (const group of groups) {
+    for (const entry of group.entries) {
+      const value = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value);
+      lines.push([group.name, entry.key, value].map(esc).join(","));
+    }
+  }
+  return lines.join("\r\n") + "\r\n";
+}
+
+function download(name, content, mime) {
+  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
