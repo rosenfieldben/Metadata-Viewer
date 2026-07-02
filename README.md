@@ -18,15 +18,46 @@ persisted, there is no history and no database.
 
 ## Run
 
+The easy way (macOS and Linux): double-click `start.command` in Finder, or
+run it from a shell. It creates the virtual environment on first run,
+installs dependencies, starts the server, and opens your browser. Press
+Ctrl+C in the window it opens to stop.
+
+The manual way:
+
 ```sh
-pip install -r requirements.txt
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+python3 -m venv .venv && source .venv/bin/activate
+python3 -m pip install -r requirements.txt
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Open http://127.0.0.1:8000 and drop files anywhere in the window.
 
 The max upload size defaults to 2 GB; override with the
-`METADATA_INSPECTOR_MAX_BYTES` environment variable.
+`METADATA_INSPECTOR_MAX_BYTES` environment variable. `start.command` also
+respects a `PORT` environment variable if 8000 is taken.
+
+## Sharing it with others
+
+The tool is local by design, so "sharing" means giving someone their own
+copy, not access to yours:
+
+- **Share the repository.** They clone it and double-click `start.command`.
+  Requirements on their machine: Python 3.11+ and ExifTool.
+- **Docker, zero setup beyond Docker itself.** The image bundles Python,
+  ExifTool, and all libraries:
+
+  ```sh
+  docker build -t metadata-inspector .
+  docker run --rm -p 8000:8000 metadata-inspector
+  ```
+
+  You can also `docker save`/`docker load` the built image to hand it to
+  someone as a single file.
+- **Not recommended: serving your instance over the network.** Binding to
+  `0.0.0.0` would let others on your network use your running copy, but
+  their files would then be uploaded to your machine, which breaks the
+  files-never-leave-your-machine promise and there is no authentication.
 
 ## Test fixtures
 
