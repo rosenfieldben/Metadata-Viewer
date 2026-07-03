@@ -35,13 +35,44 @@ fi
 source .venv/bin/activate
 python -m pip install -q -r requirements.txt
 
-PORT="${PORT:-8000}"
+# Pick the first free port at or above 8000 unless the user pinned one.
+# Anything else already running on 8000 (another dev server, for example)
+# would otherwise be what the browser opens.
+if [ -z "${PORT:-}" ]; then
+  PORT=$(python - <<'EOF'
+import socket
+for port in range(8000, 8100):
+    probe = socket.socket()
+    try:
+        probe.bind(("127.0.0.1", port))
+    except OSError:
+        continue
+    probe.close()
+    print(port)
+    break
+EOF
+)
+fi
+[ -n "$PORT" ] || pause_and_exit "No free port found between 8000 and 8099."
 URL="http://127.0.0.1:$PORT"
 
-# Open the browser once the server has had a moment to bind. Backgrounded so
-# uvicorn stays in the foreground and Ctrl+C stops everything.
+# Open the browser only after THIS app answers on the port, so a slow start
+# never sends the browser to something else.
 (
-  sleep 1.5
+  python - "$URL" <<'EOF'
+import sys, time, urllib.request
+url = sys.argv[1]
+for _ in range(60):
+    time.sleep(0.5)
+    try:
+        with urllib.request.urlopen(url, timeout=1) as resp:
+            if b"metadata inspector" in resp.read(4096).lower():
+                break
+    except Exception:
+        continue
+else:
+    sys.exit(1)
+EOF
   if command -v open >/dev/null 2>&1; then open "$URL"; \
   elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$URL"; fi
 ) &
