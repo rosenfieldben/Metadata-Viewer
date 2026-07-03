@@ -18,10 +18,15 @@ persisted, there is no history and no database.
 
 ## Run
 
-The easy way (macOS and Linux): double-click `start.command` in Finder, or
-run it from a shell. It creates the virtual environment on first run,
-installs dependencies, starts the server, and opens your browser. Press
-Ctrl+C in the window it opens to stop.
+The easy way: double-click the launcher for your platform. It creates the
+virtual environment on first run, installs dependencies, starts the server
+on a free port, and opens your browser. Press Ctrl+C in the window it opens
+to stop.
+
+- macOS and Linux: `start.command`
+- Windows: `start.bat` (needs Python 3.11+ from python.org with "Add to
+  PATH" ticked, and ExifTool: `winget install exiftool`, or the zip from
+  exiftool.org renamed to `exiftool.exe` and dropped into this folder)
 
 The manual way:
 

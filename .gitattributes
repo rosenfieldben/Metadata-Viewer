@@ -1,0 +1,4 @@
+# Batch files need CRLF line endings to run reliably on Windows, and the
+# shell launcher needs LF, regardless of who clones from where.
+start.bat text eol=crlf
+start.command text eol=lf
